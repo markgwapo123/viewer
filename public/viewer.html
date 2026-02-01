@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Phone Screen</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: #16213e;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            color: #00d4ff;
+        }
+
+        .logout-btn {
+            padding: 10px 20px;
+            background: #e94560;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .logout-btn:hover {
+            background: #c23647;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .sidebar h2 {
+            color: #00d4ff;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .streamer-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .streamer-item {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .streamer-item:hover {
+            background: #1a4d7a;
+            transform: translateX(5px);
+        }
+
+        .streamer-item.active {
+            background: #00d4ff;
+            color: #1a1a2e;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .viewer-container {
+            flex: 1;
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-container {
+            width: 100%;
+            max-width: 900px;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        #remoteVideo {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .status-message {
+            text-align: center;
+            color: #888;
+            font-size: 18px;
+        }
+
+        .connection-status {
+            padding: 10px 20px;
+            background: #0f3460;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .no-streamers {
+            color: #888;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .control-btn {
+            padding: 10px 20px;
+            background: #00d4ff;
+            border: none;
+            border-radius: 5px;
+            color: #1a1a2e;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .control-btn:hover {
+            background: #00a8cc;
+        }
+
+        .control-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📱 Phone Screen Viewer</h1>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <div class="main-content">
+        <div class="sidebar">
+            <h2>Available Devices</h2>
+            <div id="streamerList" class="streamer-list">
+                <div class="no-streamers">No devices online</div>
+            </div>
+        </div>
+
+        <div class="viewer-container">
+            <div class="connection-status">
+                <div class="status-indicator"></div>
+                <span id="connectionStatus">Connecting to server...</span>
+            </div>
+
+            <div class="status-message" id="statusMessage">
+                Select a device from the sidebar to view its screen
+            </div>
+
+            <div class="video-container" id="videoContainer" style="display: none;">
+                <video id="remoteVideo" autoplay playsinline></video>
+            </div>
+
+            <div class="controls" id="controls" style="display: none;">
+                <button class="control-btn" onclick="stopViewing()">Stop Viewing</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let peerConnection = null;
+        let currentStreamerId = null;
+
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        // Initialize
+        socket.emit('register-viewer', { username: 'viewer' });
+
+        socket.on('connect', () => {
+            document.getElementById('connectionStatus').textContent = 'Connected to server';
+        });
+
+        socket.on('streamers-list', (streamers) => {
+            updateStreamerList(streamers);
+        });
+
+        socket.on('streamer-available', (data) => {
+            addStreamer(data);
+        });
+
+        socket.on('streamer-unavailable', (data) => {
+            removeStreamer(data.streamerId);
+        });
+
+        socket.on('offer', async (data) => {
+            await handleOffer(data.senderId, data.offer);
+        });
+
+        socket.on('answer', async (data) => {
+            await handleAnswer(data.answer);
+        });
+
+        socket.on('ice-candidate', async (data) => {
+            await handleIceCandidate(data.candidate);
+        });
+
+        function updateStreamerList(streamers) {
+            const listElement = document.getElementById('streamerList');
+            
+            if (streamers.length === 0) {
+                listElement.innerHTML = '<div class="no-streamers">No devices online</div>';
+                return;
+            }
+
+            listElement.innerHTML = '';
+            streamers.forEach(streamer => {
+                addStreamer(streamer);
+            });
+        }
+
+        function addStreamer(streamer) {
+            const listElement = document.getElementById('streamerList');
+            const noStreamers = listElement.querySelector('.no-streamers');
+            if (noStreamers) {
+                noStreamers.remove();
+            }
+
+            if (document.getElementById(streamer.streamerId)) {
+                return; // Already exists
+            }
+
+            const item = document.createElement('div');
+            item.className = 'streamer-item';
+            item.id = streamer.streamerId;
+            item.innerHTML = `
+                <div class="status-indicator"></div>
+                <span>${streamer.username}</span>
+            `;
+            item.onclick = () => connectToStreamer(streamer.streamerId);
+            listElement.appendChild(item);
+        }
+
+        function removeStreamer(streamerId) {
+            const element = document.getElementById(streamerId);
+            if (element) {
+                element.remove();
+            }
+
+            if (currentStreamerId === streamerId) {
+                stopViewing();
+            }
+
+            const listElement = document.getElementById('streamerList');
+            if (listElement.children.length === 0) {
+                listElement.innerHTML = '<div class="no-streamers">No devices online</div>';
+            }
+        }
+
+        async function connectToStreamer(streamerId) {
+            if (currentStreamerId === streamerId) return;
+
+            stopViewing();
+            currentStreamerId = streamerId;
+
+            // Highlight selected streamer
+            document.querySelectorAll('.streamer-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            document.getElementById(streamerId).classList.add('active');
+
+            document.getElementById('statusMessage').textContent = 'Connecting to device...';
+            
+            // Create peer connection
+            peerConnection = new RTCPeerConnection(configuration);
+
+            peerConnection.ontrack = (event) => {
+                const remoteVideo = document.getElementById('remoteVideo');
+                remoteVideo.srcObject = event.streams[0];
+                document.getElementById('videoContainer').style.display = 'block';
+                document.getElementById('statusMessage').style.display = 'none';
+                document.getElementById('controls').style.display = 'flex';
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', {
+                        targetId: currentStreamerId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            // Request stream from the phone
+            socket.emit('request-stream', { streamerId });
+        }
+
+        async function handleOffer(senderId, offer) {
+            if (!peerConnection) {
+                peerConnection = new RTCPeerConnection(configuration);
+                
+                peerConnection.ontrack = (event) => {
+                    const remoteVideo = document.getElementById('remoteVideo');
+                    remoteVideo.srcObject = event.streams[0];
+                    document.getElementById('videoContainer').style.display = 'block';
+                    document.getElementById('statusMessage').style.display = 'none';
+                    document.getElementById('controls').style.display = 'flex';
+                };
+
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit('ice-candidate', {
+                            targetId: senderId,
+                            candidate: event.candidate
+                        });
+                    }
+                };
+            }
+
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+
+            socket.emit('answer', {
+                targetId: senderId,
+                answer: answer
+            });
+        }
+
+        async function handleAnswer(answer) {
+            if (peerConnection) {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+            }
+        }
+
+        async function handleIceCandidate(candidate) {
+            if (peerConnection) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+        }
+
+        function stopViewing() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            const remoteVideo = document.getElementById('remoteVideo');
+            remoteVideo.srcObject = null;
+            document.getElementById('videoContainer').style.display = 'none';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').textContent = 'Select a device from the sidebar to view its screen';
+            document.getElementById('controls').style.display = 'none';
+
+            document.querySelectorAll('.streamer-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            currentStreamerId = null;
+        }
+
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>
