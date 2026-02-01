@@ -9,6 +9,9 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
+// Trust proxy for production (Render uses proxies)
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -16,7 +19,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'screen-viewer-secret-key',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production' }
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
 }));
 
 // Serve static files
